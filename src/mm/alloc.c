@@ -43,6 +43,62 @@ FORWARD _PROTOTYPE( void del_slot, (struct hole *prev_ptr, struct hole *hp) );
 FORWARD _PROTOTYPE( void merge, (struct hole *hp)			    );
 FORWARD _PROTOTYPE( int swap_out, (void)				    );
 
+/*--------------------*/
+PRIVATE int fit;
+
+/*
+ * mm_in.m1_i1 -> do przekazywania liczb calkowitych
+ * mm_in.m1_p1 -> do przekazywania wskaznika na bufor
+ */
+
+/*===========================================================================*
+ *			       do_hole_map				     *
+ *===========================================================================*/
+PUBLIC int do_hole_map()
+{
+	phys_clicks counter = mm_in.m1_i1/(sizeof(phys_clicks) * 2);/*liczba miejsc do wypelnienia*/
+	phys_clicks buffer[NR_HOLES * 2 + 1]; /* n * (rozmiar + adres) + 0 */
+	phys_clicks i = 0;	/*licznik liczby par */
+	register struct hole *hp = hole_head; /*wskazanie na glowe listy */
+
+	while(hp!=NIL_HOLE && hp->h_base < swap_base && i < counter) 
+	{
+		buffer[i] = hp->h_len;
+		i++;
+		
+		buffer[i] = hp->h_base;
+		i++;
+
+		hp = hp->h_next;
+	}
+
+	buffer[i] = 0; /*ostatni element*/
+
+	/* Transfer a block of data.  The source and destination can each either be a
+	 * process (including MM) or absolute memory, indicate by setting 'src_proc'
+	 * or 'dst_proc' to ABS.
+	 * PRZYKLAD W /usr/src/fs/read.c
+	 */
+	
+	sys_copy(MM_PROC_NR, D, (phys_clicks)buffer, who,D, 
+		(phys_clicks) mm_in.m1_p1, (phys_clicks) mm_in.m1_i1);
+
+	i = i/2;	/*potrzebna ilosc par, trzeba podzielic przez 2*/
+
+	return i; 
+}
+
+/*===========================================================================*
+ *				worst_fit 				     *
+ *===========================================================================*/
+PUBLIC int do_worst_fit(void){
+	
+	if( mm_in.m1_i1 < 2)
+		fit = mm_in.m1_i1;
+
+	return 0;
+}
+
 /*===========================================================================*
  *				alloc_mem				     *
  *===========================================================================*/
@@ -56,30 +112,73 @@ phys_clicks clicks;		/* amount of memory requested */
  * needed for FORK or EXEC.  Swap other processes out if needed.
  */
 
-  register struct hole *hp, *prev_ptr;
-  phys_clicks old_base;
+	register struct hole *hp,  *prev_ptr;
+	register struct hole *max, *prev_max; 
+	phys_clicks old_base;
 
-  do {
-	hp = hole_head;
-	while (hp != NIL_HOLE && hp->h_base < swap_base) {
-		if (hp->h_len >= clicks) {
-			/* We found a hole that is big enough.  Use it. */
-			old_base = hp->h_base;	/* remember where it started */
-			hp->h_base += clicks;	/* bite a piece off */
-			hp->h_len -= clicks;	/* ditto */
+/*================================= first fit =================================*/
+	if(fit == 0)
+	{
+		do {
+			hp = hole_head;
+			while (hp != NIL_HOLE && hp->h_base < swap_base) {
+				if (hp->h_len >= clicks) {
+					/* We found a hole that is big enough.  Use it. */
+					old_base = hp->h_base;	/* remember where it started */
+					hp->h_base += clicks;	/* bite a piece off */
+					hp->h_len -= clicks;	/* ditto */
 
-			/* Delete the hole if used up completely. */
-			if (hp->h_len == 0) del_slot(prev_ptr, hp);
+					/* Delete the hole if used up completely. */
+					if (hp->h_len == 0) del_slot(prev_ptr, hp);
 
-			/* Return the start address of the acquired block. */
-			return(old_base);
-		}
+					/* Return the start address of the acquired block. */
+					return(old_base);
+				}
 
-		prev_ptr = hp;
-		hp = hp->h_next;
+				prev_ptr = hp;
+				hp = hp->h_next;
+			}
+		} while (swap_out());		/* try to swap some other process out */
 	}
-  } while (swap_out());		/* try to swap some other process out */
-  return(NO_MEM);
+
+/*================================= worst fit =================================*/
+	else
+	{
+		do{
+			hp = hole_head;
+			max = hole_head;
+			prev_max = NIL_HOLE;
+			
+			while (hp != NIL_HOLE && hp->h_base < swap_base) 
+			{
+				if(hp->h_len > max->h_len)
+				{
+					max = hp;
+					prev_max = prev_ptr;
+				}
+				
+				prev_ptr = hp;
+				hp = hp->h_next;						
+			}
+	
+			if(max->h_len >= clicks)
+			{	
+				/* We found the biggest hole */
+				old_base = max->h_base;
+				max->h_base += clicks;
+				max->h_len -= clicks;	
+				
+				/* Delete the hole if used up completely. */
+				if (max->h_len == 0) del_slot(prev_max, max);
+				
+				/* Return the start address of the acquired block. */
+				return(old_base);					
+			}		
+		
+		}while(swap_out());
+	}
+	
+	return(NO_MEM);
 }
 
 /*===========================================================================*
