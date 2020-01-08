@@ -12,6 +12,12 @@ _PROTOTYPE( int swap_off, (void)					);
 _PROTOTYPE( void swap_in, (void)					);
 _PROTOTYPE( void swap_inqueue, (struct mproc *rmp)			);
 
+/* lab5 */
+_PROTOTYPE( int do_worst_fit, (void)					);
+_PROTOTYPE( int do_hole_map, (void)					);
+
+
+
 /* break.c */
 _PROTOTYPE( int adjust, (struct mproc *rmp,
 			vir_clicks data_clicks, vir_bytes sp)		);

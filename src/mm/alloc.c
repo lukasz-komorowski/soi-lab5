@@ -43,6 +43,38 @@ FORWARD _PROTOTYPE( void del_slot, (struct hole *prev_ptr, struct hole *hp) );
 FORWARD _PROTOTYPE( void merge, (struct hole *hp)			    );
 FORWARD _PROTOTYPE( int swap_out, (void)				    );
 
+/* lab5 start */
+PRIVATE int fit;
+/* lab5 do_hole_map() */
+PUBLIC int do_hole_map()
+{
+	phys_clicks licznik = 0; /* licznik = pary * 2 */
+  phys_clicks bufor[NR_HOLES * 2 + 1];
+  phys_clicks liczbaMiejsc = mm_in.m1_i1/(sizeof(phys_clicks) * 2);
+	register struct hole *hp = hole_head;
+
+	while(hp!=NIL_HOLE && hp->h_base < swap_base && licznik < liczbaMiejsc) 
+	{
+		bufor[licznik] = hp->h_len; /* how big is the hole? */
+		licznik++;
+		bufor[licznik] = hp->h_base; /* where does the hole begin? */
+		licznik++;
+		hp = hp->h_next; /* pointer to next entry on the list */
+	}
+	bufor[licznik] = 0; /* ostatni element */
+
+	sys_copy(MM_PROC_NR, D, (phys_clicks)bufor, who,D, (phys_clicks) mm_in.m1_p1, (phys_clicks) mm_in.m1_i1);
+
+	return licznik/2; /* liczba par = licznik/2 */
+}
+/* lab5 do_worst_fit(void) */
+PUBLIC int do_worst_fit(void){
+	if( mm_in.m1_i1 < 2)
+		fit = mm_in.m1_i1;
+	return 0;
+}
+/* lab5 end */
+
 /*===========================================================================*
  *				alloc_mem				     *
  *===========================================================================*/
@@ -57,8 +89,11 @@ phys_clicks clicks;		/* amount of memory requested */
  */
 
   register struct hole *hp, *prev_ptr;
+  register struct hole *max, *prev_max; /* lab5 */
   phys_clicks old_base;
 
+  if(fit ==0) /* lab5 */
+  { /* lab5 */
   do {
 	hp = hole_head;
 	while (hp != NIL_HOLE && hp->h_base < swap_base) {
@@ -79,6 +114,40 @@ phys_clicks clicks;		/* amount of memory requested */
 		hp = hp->h_next;
 	}
   } while (swap_out());		/* try to swap some other process out */
+  /* lab5 start */
+  }
+  else
+  {
+    /* kopia powyzszego z drobnymi zmianami */
+    do {
+	hp = hole_head;
+  max = hole_head; /* najwieksza dziura */
+  prev_max = NIL_HOLE; /* poprzednia najwieksza */ 
+
+	while (hp != NIL_HOLE && hp->h_base < swap_base) {
+    if(hp->h_len > max->h_len)
+    {
+      max = hp;
+      prev_max = prev_ptr;
+    }
+    prev_ptr = hp;
+    hp = hp->h_next;
+  }
+
+		if (max->h_len >= clicks) {
+			/* mamy najwieksza dziure */
+			old_base = max->h_base;	/* remember where it started */ 
+			max->h_base += clicks;	/* bite a piece off */
+			max->h_len -= clicks;	/* ditto */
+
+			/* Delete the hole if used up completely. */
+			if (max->h_len == 0) del_slot(prev_max, max);
+			/* Return the start address of the acquired block. */
+			return(old_base);
+		} 
+  } while (swap_out());		/* try to swap some other process out */
+  }
+  /* lab5 end */
   return(NO_MEM);
 }
 
